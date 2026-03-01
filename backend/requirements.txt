@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+pymongo[srv]
+python-jose[cryptography]
+passlib[bcrypt]
+python-dotenv
+python-multipart
+boto3
+razorpay
+slowapi
+pydantic-settings
+structlog
+python-dateutil
