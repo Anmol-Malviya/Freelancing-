@@ -22,7 +22,8 @@ def connect_db():
         _create_indexes()
     except Exception as e:
         log.error("mongodb_connection_failed", error=str(e))
-        raise
+        # Do NOT raise — let uvicorn start so the server is reachable.
+        # Requests that need DB will fail gracefully with 503.
 
 
 def disconnect_db():

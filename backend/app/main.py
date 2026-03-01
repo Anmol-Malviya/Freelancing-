@@ -1,9 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
+from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 
 from app.config import settings
@@ -29,6 +31,17 @@ limiter = Limiter(key_func=get_remote_address)
 async def lifespan(app: FastAPI):
     log.info("startup", app=settings.APP_NAME, env=settings.APP_ENV)
     connect_db()
+
+    # Initialize Cloudinary
+    import cloudinary
+    cloudinary.config(
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
+        secure=True,
+    )
+    log.info("cloudinary_configured", cloud=settings.CLOUDINARY_CLOUD_NAME)
+
     yield
     disconnect_db()
     log.info("shutdown")
@@ -47,10 +60,26 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# ─── CORS ─────────────────────────────────────────────────────
+# ─── Request logging middleware (added BEFORE CORS so CORS wraps it) ──
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        log.info(
+            "request",
+            method=request.method,
+            path=request.url.path,
+            status=response.status_code,
+        )
+        return response
+
+app.add_middleware(LoggingMiddleware)
+
+# ─── CORS — must be added LAST so it wraps everything ─────────
+# Starlette processes add_middleware() in LIFO order, so the last
+# middleware added here runs FIRST on incoming requests.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],   # Strict origin, NOT "*"
+    allow_origins=[settings.FRONTEND_URL, "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,16 +102,3 @@ async def health():
         "version": settings.APP_VERSION,
         "env": settings.APP_ENV,
     }
-
-
-# ─── Request logging middleware ───────────────────────────────
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    response = await call_next(request)
-    log.info(
-        "request",
-        method=request.method,
-        path=request.url.path,
-        status=response.status_code,
-    )
-    return response

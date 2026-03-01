@@ -27,6 +27,7 @@ def _public_user(user: dict) -> dict:
     }
 
 
+# ─── /me routes MUST be declared before /{user_id} ────────────
 @router.get("/me")
 async def me(current_user: dict = Depends(get_current_user)):
     return {"success": True, "data": {
@@ -46,6 +47,78 @@ async def update_me(body: UserUpdate, current_user: dict = Depends(get_current_u
     return {"success": True, "data": _public_user(updated)}
 
 
+# ─── Earnings & Withdrawal (BEFORE /{user_id} catch-all) ─────
+@router.get("/me/earnings")
+async def my_earnings(current_user: dict = Depends(get_current_user)):
+    txns = list(
+        transactions_col()
+        .find({"user_id": current_user["_id"]})
+        .sort("timestamp", -1)
+        .limit(50)
+    )
+    return {
+        "success": True,
+        "data": {
+            "total_earnings": current_user.get("total_earnings", 0),
+            "withdrawable_balance": current_user.get("withdrawable_balance", 0),
+            "transactions": [
+                {
+                    "id": str(t["_id"]),
+                    "type": t["type"],
+                    "amount": t["amount"],
+                    "reference_id": t.get("reference_id"),
+                    "timestamp": t["timestamp"],
+                }
+                for t in txns
+            ],
+        },
+    }
+
+
+@router.post("/me/withdraw")
+async def request_withdrawal(body: WithdrawalRequest, current_user: dict = Depends(get_current_user)):
+    balance = current_user.get("withdrawable_balance", 0)
+    if body.amount > balance:
+        raise HTTPException(status_code=400, detail=f"Insufficient balance. Available: {balance} paise")
+
+    # Deduct balance atomically
+    users_col().update_one(
+        {"_id": current_user["_id"]},
+        {"$inc": {"withdrawable_balance": -body.amount}}
+    )
+
+    withdrawal = {
+        "user_id": current_user["_id"],
+        "amount": body.amount,
+        "status": "pending",
+        "upi_id": body.upi_id,
+        "razorpay_payout_id": None,
+        "requested_at": datetime.utcnow(),
+        "processed_at": None,
+    }
+    result = withdrawals_col().insert_one(withdrawal)
+
+    # Debit transaction
+    transactions_col().insert_one({
+        "user_id": current_user["_id"],
+        "type": "debit",
+        "amount": body.amount,
+        "reference_id": str(result.inserted_id),
+        "timestamp": datetime.utcnow(),
+    })
+
+    return {
+        "success": True,
+        "data": {
+            "withdrawal_id": str(result.inserted_id),
+            "amount": body.amount,
+            "status": "pending",
+            "message": "Withdrawal request submitted. Processing within 2–3 business days.",
+        },
+    }
+
+
+# ─── Public user profile (catch-all — MUST be after /me/*) ───
 @router.get("/{user_id}")
 async def get_user(user_id: str):
     try:
@@ -139,75 +212,4 @@ async def get_following(user_id: str, page: int = 1, limit: int = 20):
         "success": True,
         "data": [_public_user(u) for u in following],
         "meta": {"total": total, "page": page, "limit": limit},
-    }
-
-
-# ─── Earnings & Withdrawal ────────────────────────────────────
-@router.get("/me/earnings")
-async def my_earnings(current_user: dict = Depends(get_current_user)):
-    txns = list(
-        transactions_col()
-        .find({"user_id": current_user["_id"]})
-        .sort("timestamp", -1)
-        .limit(50)
-    )
-    return {
-        "success": True,
-        "data": {
-            "total_earnings": current_user.get("total_earnings", 0),
-            "withdrawable_balance": current_user.get("withdrawable_balance", 0),
-            "transactions": [
-                {
-                    "id": str(t["_id"]),
-                    "type": t["type"],
-                    "amount": t["amount"],
-                    "reference_id": t.get("reference_id"),
-                    "timestamp": t["timestamp"],
-                }
-                for t in txns
-            ],
-        },
-    }
-
-
-@router.post("/me/withdraw")
-async def request_withdrawal(body: WithdrawalRequest, current_user: dict = Depends(get_current_user)):
-    balance = current_user.get("withdrawable_balance", 0)
-    if body.amount > balance:
-        raise HTTPException(status_code=400, detail=f"Insufficient balance. Available: {balance} paise")
-
-    # Deduct balance atomically
-    users_col().update_one(
-        {"_id": current_user["_id"]},
-        {"$inc": {"withdrawable_balance": -body.amount}}
-    )
-
-    withdrawal = {
-        "user_id": current_user["_id"],
-        "amount": body.amount,
-        "status": "pending",
-        "upi_id": body.upi_id,
-        "razorpay_payout_id": None,
-        "requested_at": datetime.utcnow(),
-        "processed_at": None,
-    }
-    result = withdrawals_col().insert_one(withdrawal)
-
-    # Debit transaction
-    transactions_col().insert_one({
-        "user_id": current_user["_id"],
-        "type": "debit",
-        "amount": body.amount,
-        "reference_id": str(result.inserted_id),
-        "timestamp": datetime.utcnow(),
-    })
-
-    return {
-        "success": True,
-        "data": {
-            "withdrawal_id": str(result.inserted_id),
-            "amount": body.amount,
-            "status": "pending",
-            "message": "Withdrawal request submitted. Processing within 2–3 business days.",
-        },
     }

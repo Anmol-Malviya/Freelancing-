@@ -295,10 +295,19 @@ async def download_file(purchase_id: str, current_user: dict = Depends(get_curre
             detail=f"Download limit reached ({purchase['max_downloads']} downloads). Contact support."
         )
 
-    # Get the project (need s3_file_key)
+    # Get the project file URL
     project = projects_col().find_one({"_id": purchase["project_id"]})
-    if not project or not project.get("s3_file_key"):
+    if not project:
         raise HTTPException(status_code=404, detail="Project file not found")
+
+    # Get download URL — try Cloudinary file_url first, then fall back
+    download_url = project.get("file_url") or ""
+    if not download_url:
+        # Fall back: try to build Cloudinary URL from public_id
+        file_id = project.get("cloudinary_file_id") or project.get("s3_file_key")
+        if not file_id:
+            raise HTTPException(status_code=404, detail="Project file not found")
+        download_url = f"https://res.cloudinary.com/{settings.CLOUDINARY_CLOUD_NAME}/raw/upload/{file_id}"
 
     # Atomic increment download count
     purchases_col().update_one(
@@ -315,19 +324,10 @@ async def download_file(purchase_id: str, current_user: dict = Depends(get_curre
         "timestamp": datetime.utcnow(),
     })
 
-    # Generate pre-signed S3 URL (5 min expiry)
-    s3 = get_s3_client()
-    url = s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": settings.S3_BUCKET_NAME, "Key": project["s3_file_key"]},
-        ExpiresIn=settings.SIGNED_URL_EXPIRY_SECONDS,
-    )
-
     return {
         "success": True,
         "data": {
-            "download_url": url,
-            "expires_in": settings.SIGNED_URL_EXPIRY_SECONDS,
+            "download_url": download_url,
             "downloads_remaining": purchase.get("max_downloads", 5) - purchase["download_count"] - 1,
         },
     }

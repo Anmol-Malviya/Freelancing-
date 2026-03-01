@@ -84,7 +84,11 @@ class ProjectCreate(BaseModel):
     category: str = Field(..., max_length=50)
     license: str = Field(default="MIT", max_length=50)
     price: int = Field(..., ge=0)  # paise; 0 = free
-    s3_file_key: str  # Set after S3 upload confirmed
+    s3_file_key: str  # Cloudinary public_id
+    file_url: str = ""  # Cloudinary secure URL
+    live_url: str = ""  # Live demo link
+    github_url: str = ""  # GitHub repo link
+    image_urls: List[str] = []  # Cloudinary image URLs
 
 
 class ProjectUpdate(BaseModel):
@@ -94,6 +98,9 @@ class ProjectUpdate(BaseModel):
     category: Optional[str] = None
     license: Optional[str] = None
     price: Optional[int] = Field(None, ge=0)
+    live_url: Optional[str] = None
+    github_url: Optional[str] = None
+    image_urls: Optional[List[str]] = None
 
 
 class ProjectPublic(BaseModel):

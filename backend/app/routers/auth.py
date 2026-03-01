@@ -39,7 +39,7 @@ async def register(body: UserRegister):
         "name": body.name,
         "email": body.email.lower(),
         "password_hash": hash_password(body.password),
-        "email_verified": False,
+        "email_verified": True,  # Auto-verified for MVP (no email service configured)
         "bio": "",
         "skills": [],
         "github_url": "",

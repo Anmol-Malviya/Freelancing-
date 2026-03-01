@@ -1,20 +1,205 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File
 from datetime import datetime
 from bson import ObjectId
 from typing import Optional
+import cloudinary.uploader
+import structlog
 
 from app.database import projects_col, purchases_col
 from app.schemas import ProjectCreate, ProjectUpdate
 from app.auth import get_current_user
+from app.config import settings
+
+log = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1/projects", tags=["Projects"])
 
+# Max ZIP size in bytes (Cloudinary free plan = 10MB for raw files)
+MAX_UPLOAD_MB = 10
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+
 
 def _serialize(doc: dict) -> dict:
-    d = {k: v for k, v in doc.items() if k not in ("_id", "s3_file_key")}
+    d = {k: v for k, v in doc.items() if k not in ("_id", "cloudinary_file_id")}
     d["id"] = str(doc["_id"])
     d["user_id"] = str(doc.get("user_id", ""))
     return d
+
+
+# ─── Upload ZIP file to Cloudinary ────────────────────────────
+@router.post("/upload-file")
+async def upload_project_file(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Upload a ZIP file to Cloudinary. Returns the file ID and URL."""
+    import io
+    import re
+
+    # Validate file type
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+
+    allowed_extensions = (".zip", ".rar", ".tar.gz", ".7z", ".gz")
+    if not any(file.filename.lower().endswith(ext) for ext in allowed_extensions):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only archive files are allowed: {', '.join(allowed_extensions)}"
+        )
+
+    # Read and check size
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large ({len(content) / 1024 / 1024:.1f}MB). Max size: {MAX_UPLOAD_MB}MB"
+        )
+
+    # Sanitize filename for Cloudinary public_id
+    safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', file.filename)
+    ts = int(datetime.utcnow().timestamp())
+    public_id = f"{str(current_user['_id'])}_{ts}_{safe_name}"
+
+    # Debug: log Cloudinary config
+    log.info("cloudinary_upload_attempt",
+             cloud=settings.CLOUDINARY_CLOUD_NAME,
+             key=settings.CLOUDINARY_API_KEY[:6] + "..." if settings.CLOUDINARY_API_KEY else "(empty)",
+             file_size=len(content),
+             public_id=public_id)
+
+    try:
+        # Wrap bytes in BytesIO for Cloudinary upload
+        file_stream = io.BytesIO(content)
+
+        # Upload to Cloudinary as raw file
+        result = cloudinary.uploader.upload(
+            file_stream,
+            resource_type="raw",
+            folder="devmarket/projects",
+            public_id=public_id,
+            overwrite=False,
+        )
+
+        log.info("file_uploaded", public_id=result["public_id"], size=len(content))
+
+        return {
+            "success": True,
+            "data": {
+                "file_id": result["public_id"],
+                "file_url": result["secure_url"],
+                "file_name": file.filename,
+                "file_size": len(content),
+            },
+        }
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        log.error("cloudinary_upload_failed", error=str(e), traceback=tb)
+        raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
+
+
+# ─── Standalone Image Upload (For project creation flow) ───────
+@router.post("/upload-image")
+async def upload_standalone_image(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Upload a screenshot/image. Returns the image URL to be used in project creation."""
+    # Validate image type
+    allowed = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+    if not file.filename or not any(file.filename.lower().endswith(ext) for ext in allowed):
+        raise HTTPException(status_code=400, detail=f"Only images allowed: {', '.join(allowed)}")
+
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:  # 5MB max for images
+        raise HTTPException(status_code=400, detail="Image too large. Max 5MB.")
+
+    import re
+    safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', file.filename)
+    ts = int(datetime.utcnow().timestamp())
+    public_id = f"img_{str(current_user['_id'])}_{ts}_{safe_name}"
+
+    try:
+        import io
+        file_stream = io.BytesIO(content)
+
+        import cloudinary.uploader
+        result = cloudinary.uploader.upload(
+            file_stream,
+            resource_type="image",
+            folder="devmarket/screenshots",
+            public_id=public_id,
+            transformation=[{"width": 1200, "crop": "limit", "quality": "auto"}],
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "image_url": result["secure_url"],
+            },
+        }
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        log.error("cloudinary_image_upload_failed", error=str(e), traceback=tb)
+        raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
+
+
+# ─── Upload project screenshot to Cloudinary ─────────────────
+@router.post("/{project_id}/upload-image")
+async def upload_project_image(
+    project_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Upload a screenshot/image for a project."""
+    try:
+        oid = ObjectId(project_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid project ID")
+
+    project = projects_col().find_one({"_id": oid, "is_deleted": False})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project["user_id"] != current_user["_id"]:
+        raise HTTPException(status_code=403, detail="Not your project")
+
+    # Validate image type
+    allowed = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+    if not file.filename or not any(file.filename.lower().endswith(ext) for ext in allowed):
+        raise HTTPException(status_code=400, detail=f"Only images allowed: {', '.join(allowed)}")
+
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:  # 5MB max for images
+        raise HTTPException(status_code=400, detail="Image too large. Max 5MB.")
+
+    try:
+        import io
+        file_stream = io.BytesIO(content)
+
+        result = cloudinary.uploader.upload(
+            file_stream,
+            resource_type="image",
+            folder="devmarket/screenshots",
+            public_id=f"{project_id}_{int(datetime.utcnow().timestamp())}",
+            transformation=[{"width": 1200, "crop": "limit", "quality": "auto"}],
+        )
+
+        # Add URL to project's image_urls array
+        projects_col().update_one(
+            {"_id": oid},
+            {"$push": {"image_urls": result["secure_url"]}}
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "image_url": result["secure_url"],
+            },
+        }
+    except Exception as e:
+        log.error("image_upload_failed", error=str(e))
+        raise HTTPException(status_code=500, detail="Image upload failed.")
 
 
 @router.get("")
@@ -54,7 +239,7 @@ async def list_projects(
     total = projects_col().count_documents(query)
     docs = list(
         projects_col()
-        .find(query, {"s3_file_key": 0})  # Never expose S3 key
+        .find(query, {"cloudinary_file_id": 0})  # Never expose file ID
         .sort(sort_map[sort])
         .skip(skip)
         .limit(limit)
@@ -69,9 +254,6 @@ async def list_projects(
 
 @router.post("", status_code=201)
 async def create_project(body: ProjectCreate, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("email_verified"):
-        raise HTTPException(status_code=403, detail="Email verification required to list projects")
-
     now = datetime.utcnow()
     doc = {
         "user_id": current_user["_id"],
@@ -81,8 +263,11 @@ async def create_project(body: ProjectCreate, current_user: dict = Depends(get_c
         "category": body.category,
         "license": body.license,
         "price": body.price,              # paise
-        "s3_file_key": body.s3_file_key,
-        "image_urls": [],
+        "cloudinary_file_id": body.s3_file_key,  # Now stores Cloudinary public_id
+        "file_url": body.file_url if hasattr(body, 'file_url') else "",
+        "live_url": body.live_url if hasattr(body, 'live_url') else "",
+        "github_url": body.github_url if hasattr(body, 'github_url') else "",
+        "image_urls": body.image_urls if hasattr(body, 'image_urls') else [],
         "total_sales": 0,
         "average_rating": 0.0,
         "rating_count": 0,
@@ -109,7 +294,7 @@ async def get_project(project_id: str):
 
     doc = projects_col().find_one(
         {"_id": oid, "is_deleted": False},
-        {"s3_file_key": 0}  # Never expose S3 key
+        {"cloudinary_file_id": 0}  # Never expose file ID
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -140,7 +325,7 @@ async def update_project(
     updates["updated_at"] = datetime.utcnow()
 
     projects_col().update_one({"_id": oid}, {"$set": updates})
-    updated = projects_col().find_one({"_id": oid}, {"s3_file_key": 0})
+    updated = projects_col().find_one({"_id": oid}, {"cloudinary_file_id": 0})
 
     return {"success": True, "data": _serialize(updated)}
 

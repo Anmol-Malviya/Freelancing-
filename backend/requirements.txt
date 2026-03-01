@@ -3,11 +3,14 @@ uvicorn[standard]
 pymongo[srv]
 python-jose[cryptography]
 passlib[bcrypt]
+bcrypt
 python-dotenv
 python-multipart
 boto3
 razorpay
 slowapi
+pydantic[email]
 pydantic-settings
 structlog
 python-dateutil
+cloudinary
