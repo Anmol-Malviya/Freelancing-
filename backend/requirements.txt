@@ -14,3 +14,4 @@ pydantic-settings
 structlog
 python-dateutil
 cloudinary
+dnspython
