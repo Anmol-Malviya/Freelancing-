@@ -149,13 +149,13 @@ def send_otp_email(email: str, otp: str):
         context.sendmail(sender_email, email, message.as_string())
         context.quit()
         return {"id": "smtp-sent"}
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"SMTP Authentication Error (Check App Password): {e}")
-        raise HTTPException(status_code=500, detail=f"SMTP Auth Error: Incorrect App Password or Email. Use an App Password if using Gmail.")
     except Exception as e:
         import traceback
-        print(f"Exception sending email: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"SMTP Error: {str(e)}")
+        print(f"\n{'='*60}")
+        print(f"🚨 SMTP SEND FAILED (Render Free Tier blocks port 587)")
+        print(f"📧 Your OTP for {email} is: >> {otp} <<")
+        print(f"{'='*60}\n")
+        # We don't raise HTTPException here because it's running in a background thread now
 
 
 
@@ -172,11 +172,14 @@ async def request_otp(body: SendOTPRequest):
             "created_at": now
         })
         
+        # Log the OTP on the server for easy testing on Render
+        print(f"\n🔑 GENERATED OTP for {body.email}: {otp}\n")
+        
         # Send email asynchronously so it doesn't block the backend thread
         import asyncio
         asyncio.create_task(asyncio.to_thread(send_otp_email, body.email.lower(), otp))
         
-        return {"success": True, "data": {"message": "OTP sent successfully"}}
+        return {"success": True, "data": {"message": "OTP logic executed"}}
     except HTTPException:
         raise
     except Exception as e:
