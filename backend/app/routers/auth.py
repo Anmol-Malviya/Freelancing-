@@ -142,8 +142,8 @@ def send_otp_email(email: str, otp: str):
     message.attach(part2)
 
     try:
-        # Create secure connection with server and send email
-        context = smtplib.SMTP(smtp_server, smtp_port)
+        # Create secure connection with server and send email with a strict timeout
+        context = smtplib.SMTP(smtp_server, smtp_port, timeout=5)
         context.starttls()
         context.login(sender_email, sender_password)
         context.sendmail(sender_email, email, message.as_string())
@@ -172,8 +172,9 @@ async def request_otp(body: SendOTPRequest):
             "created_at": now
         })
         
-        # Send email
-        send_otp_email(body.email.lower(), otp)
+        # Send email asynchronously so it doesn't block the backend thread
+        import asyncio
+        asyncio.create_task(asyncio.to_thread(send_otp_email, body.email.lower(), otp))
         
         return {"success": True, "data": {"message": "OTP sent successfully"}}
     except HTTPException:
