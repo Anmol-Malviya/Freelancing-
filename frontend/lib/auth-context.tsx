@@ -14,6 +14,7 @@ interface AuthCtx {
     user: User | null;
     loading: boolean;
     login: (email: string, password: string) => Promise<void>;
+    loginWithGoogle: () => Promise<void>;
     register: (name: string, email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
     refresh: () => Promise<void>;
@@ -60,6 +61,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(u);
     };
 
+    const loginWithGoogle = async () => {
+        const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+        const { auth } = await import('@/lib/firebase');
+
+        // 1. Authenticate with Google (Popup)
+        const provider = new GoogleAuthProvider();
+        const userCredential = await signInWithPopup(auth, provider);
+        const fbToken = await userCredential.user.getIdToken();
+
+        // 2. Sync with Backend
+        // If the user doesn't exist in MongoDB, the backend will auto-create them!
+        const { data } = await authApi.firebaseLogin({
+            token: fbToken,
+            name: userCredential.user.displayName || undefined
+        });
+
+        const { access_token, refresh_token, user: u } = data.data;
+
+        Cookies.set('access_token', access_token, { expires: 1 / 96 });
+        Cookies.set('refresh_token', refresh_token, { expires: 7 });
+        setUser(u);
+    };
+
     const register = async (name: string, email: string, password: string) => {
         const { createUserWithEmailAndPassword } = await import('firebase/auth');
         const { auth } = await import('@/lib/firebase');
@@ -89,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, register, logout, refresh }}>
+        <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, register, logout, refresh }}>
             {children}
         </AuthContext.Provider>
     );

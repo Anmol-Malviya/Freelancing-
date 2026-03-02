@@ -17,7 +17,8 @@
         "js-cookie": "^3.0.5",
         "react-hot-toast": "^2.4.1",
         "lucide-react": "^0.378.0",
-        "razorpay": "^2.9.2"
+        "razorpay": "^2.9.2",
+        "firebase": "^10.12.0"
     },
     "devDependencies": {
         "typescript": "^5",
