@@ -111,61 +111,49 @@ async def login(body: UserLogin):
     }
 
 def send_otp_email(email: str, otp: str):
+    import urllib.request
+    import json
     import os
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
-
-    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    from fastapi import HTTPException
     
-    smtp_server = "smtp.gmail.com"
-    smtp_port = 587
-    sender_email = settings.EMAIL_FROM
-    sender_password = settings.RESEND_API_KEY # Repurposed as SMTP password
-    
-    # Force read from .env if current settings are empty or default
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                if line.startswith("RESEND_API_KEY="): # Repurposing this env var for SMTP App Password
-                    sender_password = line.strip().split("=", 1)[1]
-                elif line.startswith("EMAIL_FROM="):
-                    sender_email = line.strip().split("=", 1)[1]
-
-    message = MIMEMultipart("alternative")
-    message["Subject"] = "Your DevMarket Verification Code"
-    message["From"] = sender_email
-    message["To"] = email
-
-    html = f"<h1>Verification Code</h1><p>Your OTP is <strong style='font-size: 24px; letter-spacing: 4px;'>{otp}</strong>. It will expire in 5 minutes.</p>"
-    part2 = MIMEText(html, "html")
-    message.attach(part2)
-
+    # Render doesn't block out-bound HTTP requests, so Resend API will work!
+    api_key = settings.RESEND_API_KEY
+    if not api_key:
+        print("Missing RESEND_API_KEY")
+        return
+        
     try:
-        # Create secure connection with server and send email with a strict timeout
-        context = smtplib.SMTP(smtp_server, smtp_port, timeout=5)
-        context.starttls()
-        context.login(sender_email, sender_password)
-        context.sendmail(sender_email, email, message.as_string())
-        context.quit()
-        return {"id": "smtp-sent"}
-    except Exception as e:
-        import traceback
+        data = {
+            "from": "DevMarket <onboarding@resend.dev>",
+            "to": [email],
+            "subject": "Your DevMarket Verification Code",
+            "html": f"<h1>Verification Code</h1><p>Your OTP is <strong style='font-size: 24px; letter-spacing: 4px;'>{otp}</strong>. It will expire in 5 minutes.</p>"
+        }
+        
+        req = urllib.request.Request("https://api.resend.com/emails", data=json.dumps(data).encode("utf-8"))
+        req.add_header("Authorization", f"Bearer {api_key}")
+        req.add_header("Content-Type", "application/json")
+        
+        response = urllib.request.urlopen(req)
+        print(f"✅ EMAIL SENT SUCCESSFULLY VIA RESEND API: {response.read()}")
+        
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode()
         print(f"\n{'='*60}")
-        print(f"🚨 SMTP SEND FAILED (Render Free Tier blocks port 587)")
-        print(f"📧 Your OTP for {email} is: >> {otp} <<")
+        print(f"🚨 RESEND API ERROR: You are trying to send to {email}")
+        print(f"Resend Error details: {error_body}")
+        print("💡 REMINDER: On Resend's free tier, you can ONLY send emails to the exact email address you registered Resend with (jsshmrgs@gmail.com). To send to other emails, you must verify a domain.")
         print(f"{'='*60}\n")
-        # We don't raise HTTPException here because it's running in a background thread now
+    except Exception as e:
+        print(f"Exception sending email: {e}")
 
 
 
 @router.post("/request-otp")
 async def request_otp(body: SendOTPRequest):
     try:
-        # HARDCODED OTP FOR DEMO / RENDER DEPLOYMENT
-        # Since Render freezes outgoing emails on their free tier, we'll
-        # just use a single code that always works: 123456
-        otp = "123456"
+        # REAL RANDOM OTP IS RESTORED
+        otp = str(random.randint(100000, 999999))
         now = datetime.utcnow()
         
         # Store OTP in db
@@ -178,9 +166,11 @@ async def request_otp(body: SendOTPRequest):
         # Log the OTP on the server for easy testing on Render
         print(f"\n🔑 GENERATED OTP for {body.email}: {otp}\n")
         
-        # We skip calling send_otp_email entirely so Render doesn't throw a blocked port error
+        # Send email asynchronously using RESEND API (bypasses Render's port blocks!)
+        import asyncio
+        asyncio.create_task(asyncio.to_thread(send_otp_email, body.email.lower(), otp))
         
-        return {"success": True, "data": {"message": "OTP logic executed (123456)"}}
+        return {"success": True, "data": {"message": "OTP sent successfully"}}
     except HTTPException:
         raise
     except Exception as e:
