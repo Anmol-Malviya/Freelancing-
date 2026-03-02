@@ -15,8 +15,6 @@ interface AuthCtx {
     loading: boolean;
     login: (email: string, password: string) => Promise<void>;
     register: (name: string, email: string, password: string) => Promise<void>;
-    requestOtp: (email: string, name?: string) => Promise<void>;
-    verifyOtp: (email: string, otp: string, name?: string) => Promise<void>;
     logout: () => Promise<void>;
     refresh: () => Promise<void>;
 }
@@ -46,34 +44,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const login = async (email: string, password: string) => {
-        const { data } = await authApi.login({ email, password });
+        const { signInWithEmailAndPassword } = await import('firebase/auth');
+        const { auth } = await import('@/lib/firebase');
+
+        // 1. Authenticate with Firebase
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const fbToken = await userCredential.user.getIdToken();
+
+        // 2. Sync with Backend
+        const { data } = await authApi.firebaseLogin({ token: fbToken });
         const { access_token, refresh_token, user: u } = data.data;
+
         Cookies.set('access_token', access_token, { expires: 1 / 96 });
         Cookies.set('refresh_token', refresh_token, { expires: 7 });
         setUser(u);
     };
 
     const register = async (name: string, email: string, password: string) => {
-        const { data } = await authApi.register({ name, email, password });
-        const { access_token, refresh_token, user: u } = data.data;
-        Cookies.set('access_token', access_token, { expires: 1 / 96 });
-        Cookies.set('refresh_token', refresh_token, { expires: 7 });
-        setUser(u);
-    };
+        const { createUserWithEmailAndPassword } = await import('firebase/auth');
+        const { auth } = await import('@/lib/firebase');
 
-    const requestOtp = async (email: string, name?: string) => {
-        await authApi.requestOtp({ email, name });
-    };
+        // 1. Create User in Firebase
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const fbToken = await userCredential.user.getIdToken();
 
-    const verifyOtp = async (email: string, otp: string, name?: string) => {
-        const { data } = await authApi.verifyOtp({ email, otp, name });
+        // 2. Sync with Backend (It will create the user in MongoDB if it doesn't exist)
+        const { data } = await authApi.firebaseLogin({ token: fbToken, name });
         const { access_token, refresh_token, user: u } = data.data;
+
         Cookies.set('access_token', access_token, { expires: 1 / 96 });
         Cookies.set('refresh_token', refresh_token, { expires: 7 });
         setUser(u);
     };
 
     const logout = async () => {
+        const { signOut } = await import('firebase/auth');
+        const { auth } = await import('@/lib/firebase');
+
+        await signOut(auth).catch(() => { });
         try { await authApi.logout(); } catch { }
         Cookies.remove('access_token');
         Cookies.remove('refresh_token');
@@ -81,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, register, requestOtp, verifyOtp, logout, refresh }}>
+        <AuthContext.Provider value={{ user, loading, login, register, logout, refresh }}>
             {children}
         </AuthContext.Provider>
     );

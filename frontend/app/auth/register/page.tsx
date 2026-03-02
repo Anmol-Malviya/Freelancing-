@@ -7,37 +7,22 @@ import { Code2, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function RegisterPage() {
-    const { requestOtp, verifyOtp } = useAuth();
+    const { register } = useAuth();
     const router = useRouter();
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
-    const [otp, setOtp] = useState('');
+    const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
-    const [step, setStep] = useState<1 | 2>(1);
 
-    const handleRequestOtp = async (e: React.FormEvent) => {
+    const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         try {
-            await requestOtp(email, name);
-            toast.success('Verification code sent to your email');
-            setStep(2);
-        } catch (err: any) {
-            toast.error(err?.response?.data?.detail || 'Failed to send code');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleVerifyOtp = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        try {
-            await verifyOtp(email, otp, name);
+            await register(name, email, password);
             toast.success('Account verified! Welcome to DevMarket 🎉');
             router.push('/marketplace');
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || 'Invalid verification code');
+            toast.error(err?.message || err?.response?.data?.detail || 'Failed to register account');
         } finally {
             setLoading(false);
         }
@@ -52,71 +37,57 @@ export default function RegisterPage() {
                     </div>
                     <h1 className="text-2xl font-bold text-white">Create your account</h1>
                     <p className="text-gray-400 mt-1 text-sm">
-                        {step === 1 ? 'Free forever. Start selling in minutes.' : `We sent a code to ${email}`}
+                        Free forever. Start selling in minutes.
                     </p>
                 </div>
 
                 <div className="glass p-8">
-                    {step === 1 ? (
-                        <form onSubmit={handleRequestOtp} className="space-y-5">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">Full Name</label>
-                                <input
-                                    type="text"
-                                    required
-                                    placeholder="Anmol Malviya"
-                                    value={name}
-                                    onChange={e => setName(e.target.value)}
-                                    className="input"
-                                />
-                            </div>
+                    <form onSubmit={handleRegister} className="space-y-5">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Full Name</label>
+                            <input
+                                type="text"
+                                required
+                                placeholder="Anmol Malviya"
+                                value={name}
+                                onChange={e => setName(e.target.value)}
+                                className="input"
+                            />
+                        </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
-                                <input
-                                    type="email"
-                                    required
-                                    placeholder="you@example.com"
-                                    value={email}
-                                    onChange={e => setEmail(e.target.value)}
-                                    className="input"
-                                />
-                            </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                            <input
+                                type="email"
+                                required
+                                placeholder="you@example.com"
+                                value={email}
+                                onChange={e => setEmail(e.target.value)}
+                                className="input"
+                            />
+                        </div>
 
-                            <button type="submit" disabled={loading} className="btn-primary w-full justify-center py-3">
-                                {loading ? <Loader2 size={18} className="animate-spin" /> : 'Send Verification Code'}
-                            </button>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                            <input
+                                type="password"
+                                required
+                                minLength={6}
+                                placeholder="••••••••"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                className="input"
+                            />
+                        </div>
 
-                            <p className="text-center text-xs text-gray-500 mt-4">
-                                By signing up, you agree to our Terms of Service and Privacy Policy.
-                            </p>
-                        </form>
-                    ) : (
-                        <form onSubmit={handleVerifyOtp} className="space-y-5">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">6-Digit Code</label>
-                                <input
-                                    type="text"
-                                    required
-                                    maxLength={6}
-                                    placeholder="123456"
-                                    value={otp}
-                                    onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
-                                    className="input text-center tracking-[0.5em] text-lg font-mono"
-                                />
-                            </div>
-                            <button type="submit" disabled={loading || otp.length !== 6} className="btn-primary w-full justify-center py-3">
-                                {loading ? <Loader2 size={18} className="animate-spin" /> : 'Verify Account'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setStep(1)}
-                                className="w-full text-sm text-gray-400 hover:text-white mt-4"
-                            >
-                                Back
-                            </button>
-                        </form>
-                    )}
+                        <button type="submit" disabled={loading} className="btn-primary w-full justify-center py-3">
+                            {loading ? <Loader2 size={18} className="animate-spin" /> : 'Create Account'}
+                        </button>
+
+                        <p className="text-center text-xs text-gray-500 mt-4">
+                            By signing up, you agree to our Terms of Service and Privacy Policy.
+                        </p>
+                    </form>
 
                     <p className="text-center text-sm text-gray-500 mt-6">
                         Already have an account?{' '}

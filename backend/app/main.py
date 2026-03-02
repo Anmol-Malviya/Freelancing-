@@ -42,6 +42,22 @@ async def lifespan(app: FastAPI):
     )
     log.info("cloudinary_configured", cloud=settings.CLOUDINARY_CLOUD_NAME)
 
+    # Initialize Firebase Admin SDK
+    import firebase_admin
+    from firebase_admin import credentials
+    import os
+    
+    cred_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "firebase-service-account.json")
+    if os.path.exists(cred_path):
+        try:
+            cred = credentials.Certificate(cred_path)
+            firebase_admin.initialize_app(cred)
+            log.info("firebase_admin_configured")
+        except Exception as e:
+            log.error(f"firebase_admin_failed: {e}")
+    else:
+        log.warning("firebase_admin_missing", message="firebase-service-account.json not found in backend folder. Firebase auth login will fail.")
+
     yield
     disconnect_db()
     log.info("shutdown")

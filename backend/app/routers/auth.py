@@ -9,7 +9,7 @@ import random
 
 from app.database import users_col, otps_col
 from app.config import settings
-from app.schemas import UserRegister, UserLogin, SendOTPRequest, VerifyOTPRequest
+from app.schemas import UserRegister, UserLogin, SendOTPRequest, VerifyOTPRequest, FirebaseLoginRequest
 from app.auth import (
     hash_password,
     verify_password,
@@ -109,6 +109,70 @@ async def login(body: UserLogin):
             "refresh_token": refresh_token,
         },
     }
+
+@router.post("/firebase-login")
+async def firebase_login(body: FirebaseLoginRequest):
+    import firebase_admin
+    from firebase_admin import auth
+    
+    try:
+        # 1. Verify token with Google
+        decoded_token = auth.verify_id_token(body.token)
+        email = decoded_token.get("email").lower()
+        now = datetime.utcnow()
+        
+        # 2. Find MongoDB user
+        user = users_col().find_one({"email": email})
+        
+        # 3. Create if missing (Registration flow)
+        if not user:
+            name = body.name or decoded_token.get("name") or email.split("@")[0]
+            user_doc = {
+                "name": name,
+                "email": email,
+                "password_hash": "", # Firebase handles passwords
+                "email_verified": decoded_token.get("email_verified", True),
+                "bio": "",
+                "skills": [],
+                "github_url": "",
+                "profile_image": decoded_token.get("picture", ""),
+                "role": "user",
+                "is_active": True,
+                "is_banned": False,
+                "token_version": 0,
+                "last_login": now,
+                "withdrawable_balance": 0,
+                "total_earnings": 0,
+                "created_at": now,
+                "updated_at": now,
+            }
+            result = users_col().insert_one(user_doc)
+            user_doc["_id"] = result.inserted_id
+            user = user_doc
+        else:
+            # Check banned
+            if user.get("is_banned"):
+                raise HTTPException(status_code=403, detail="Account suspended")
+            # Update login time
+            users_col().update_one({"_id": user["_id"]}, {"$set": {"last_login": now}})
+            
+        # 4. Give them our custom JWT so none of our backend requires changes
+        tv = user.get("token_version", 0)
+        access_token = create_access_token({"sub": str(user["_id"]), "tv": tv})
+        refresh_token = create_refresh_token({"sub": str(user["_id"]), "tv": tv})
+        
+        return {
+            "success": True,
+            "data": {
+                "user": _serialize_user(user),
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+            },
+        }
+    except Exception as e:
+        import traceback
+        print(f"Firebase token error: {traceback.format_exc()}")
+        raise HTTPException(status_code=401, detail=f"Invalid Firebase Token: {e}")
 
 def send_otp_email(email: str, otp: str):
     import os

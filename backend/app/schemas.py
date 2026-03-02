@@ -65,6 +65,11 @@ class VerifyOTPRequest(BaseModel):
     name: Optional[str] = None
 
 
+class FirebaseLoginRequest(BaseModel):
+    token: str
+    name: Optional[str] = None
+
+
 class UserUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=60)
     bio: Optional[str] = Field(None, max_length=500)

@@ -56,6 +56,9 @@ export const authApi = {
         api.post('/api/v1/auth/login', data),
     requestOtp: (data: { email: string; name?: string }) =>
         api.post('/api/v1/auth/request-otp', data),
+    // New Firebase login route
+    firebaseLogin: (data: { token: string; name?: string }) =>
+        api.post('/api/v1/auth/firebase-login', data),
     verifyOtp: (data: { email: string; otp: string; name?: string }) =>
         api.post('/api/v1/auth/verify-otp', data),
     logout: () => api.post('/api/v1/auth/logout'),
