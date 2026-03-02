@@ -2,9 +2,14 @@ from fastapi import APIRouter, HTTPException, status, Request, Depends
 from fastapi.responses import JSONResponse
 from datetime import datetime
 from bson import ObjectId
+import urllib.request
+import json
+import urllib.error
+import random
 
-from app.database import users_col
-from app.schemas import UserRegister, UserLogin
+from app.database import users_col, otps_col
+from app.config import settings
+from app.schemas import UserRegister, UserLogin, SendOTPRequest, VerifyOTPRequest
 from app.auth import (
     hash_password,
     verify_password,
@@ -104,6 +109,155 @@ async def login(body: UserLogin):
             "refresh_token": refresh_token,
         },
     }
+
+def send_otp_email(email: str, otp: str):
+    import os
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    
+    smtp_server = "smtp.gmail.com"
+    smtp_port = 587
+    sender_email = settings.EMAIL_FROM
+    sender_password = settings.RESEND_API_KEY # Repurposed as SMTP password
+    
+    # Force read from .env if current settings are empty or default
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                if line.startswith("RESEND_API_KEY="): # Repurposing this env var for SMTP App Password
+                    sender_password = line.strip().split("=", 1)[1]
+                elif line.startswith("EMAIL_FROM="):
+                    sender_email = line.strip().split("=", 1)[1]
+
+    message = MIMEMultipart("alternative")
+    message["Subject"] = "Your DevMarket Verification Code"
+    message["From"] = sender_email
+    message["To"] = email
+
+    html = f"<h1>Verification Code</h1><p>Your OTP is <strong style='font-size: 24px; letter-spacing: 4px;'>{otp}</strong>. It will expire in 5 minutes.</p>"
+    part2 = MIMEText(html, "html")
+    message.attach(part2)
+
+    try:
+        # Create secure connection with server and send email
+        context = smtplib.SMTP(smtp_server, smtp_port)
+        context.starttls()
+        context.login(sender_email, sender_password)
+        context.sendmail(sender_email, email, message.as_string())
+        context.quit()
+        return {"id": "smtp-sent"}
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"SMTP Authentication Error (Check App Password): {e}")
+        raise HTTPException(status_code=500, detail=f"SMTP Auth Error: Incorrect App Password or Email. Use an App Password if using Gmail.")
+    except Exception as e:
+        import traceback
+        print(f"Exception sending email: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"SMTP Error: {str(e)}")
+
+
+
+@router.post("/request-otp")
+async def request_otp(body: SendOTPRequest):
+    try:
+        otp = str(random.randint(100000, 999999))
+        now = datetime.utcnow()
+        
+        # Store OTP in db
+        otps_col().insert_one({
+            "email": body.email.lower(),
+            "otp": otp,
+            "created_at": now
+        })
+        
+        # Send email
+        send_otp_email(body.email.lower(), otp)
+        
+        return {"success": True, "data": {"message": "OTP sent successfully"}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        with open("c:/Users/anmol/Documents/NEW-001/backend/error_log.txt", "w") as f:
+            f.write(f"CRITICAL ERROR in request_otp:\n{error_details}")
+        print(f"CRITICAL ERROR in request_otp:\n{error_details}")
+        raise HTTPException(status_code=500, detail=f"Server logic error: {str(e)}")
+
+
+@router.post("/verify-otp")
+async def verify_otp(body: VerifyOTPRequest):
+    try:
+        email = body.email.lower()
+        
+        # Check OTP (get the most recent one)
+        otp_doc = otps_col().find_one({"email": email}, sort=[("created_at", -1)])
+        
+        if not otp_doc or otp_doc["otp"] != body.otp:
+            raise HTTPException(status_code=401, detail="Invalid or expired OTP")
+            
+        # Valid OTP, clear it
+        otps_col().delete_many({"email": email})
+        
+        # Find user or create if new
+        user = users_col().find_one({"email": email})
+        now = datetime.utcnow()
+        
+        if not user:
+            name = body.name or email.split("@")[0]
+            # Create user
+            user_doc = {
+                "name": name,
+                "email": email,
+                "password_hash": hash_password(body.otp), # dummy password
+                "email_verified": True,
+                "bio": "",
+                "skills": [],
+                "github_url": "",
+                "profile_image": "",
+                "role": "user",
+                "is_active": True,
+                "is_banned": False,
+                "token_version": 0,
+                "last_login": now,
+                "withdrawable_balance": 0,
+                "total_earnings": 0,
+                "created_at": now,
+                "updated_at": now,
+            }
+            result = users_col().insert_one(user_doc)
+            user_doc["_id"] = result.inserted_id
+            user = user_doc
+        else:
+            if user.get("is_banned"):
+                raise HTTPException(status_code=403, detail="Account has been suspended")
+            # Update last_login
+            users_col().update_one(
+                {"_id": user["_id"]},
+                {"$set": {"last_login": now, "email_verified": True}}
+            )
+
+        tv = user.get("token_version", 0)
+        access_token = create_access_token({"sub": str(user["_id"]), "tv": tv})
+        refresh_token = create_refresh_token({"sub": str(user["_id"]), "tv": tv})
+
+        return {
+            "success": True,
+            "data": {
+                "user": _serialize_user(user),
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"CRITICAL ERROR in verify_otp:\n{error_details}")
+        raise HTTPException(status_code=500, detail=f"Server logic error: {str(e)}")
 
 
 @router.post("/refresh-token")

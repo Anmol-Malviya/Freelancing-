@@ -54,6 +54,10 @@ export const authApi = {
         api.post('/api/v1/auth/register', data),
     login: (data: { email: string; password: string }) =>
         api.post('/api/v1/auth/login', data),
+    requestOtp: (data: { email: string; name?: string }) =>
+        api.post('/api/v1/auth/request-otp', data),
+    verifyOtp: (data: { email: string; otp: string; name?: string }) =>
+        api.post('/api/v1/auth/verify-otp', data),
     logout: () => api.post('/api/v1/auth/logout'),
     refreshToken: (refresh_token: string) =>
         api.post('/api/v1/auth/refresh-token', { refresh_token }),

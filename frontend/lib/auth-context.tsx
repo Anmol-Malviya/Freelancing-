@@ -15,6 +15,8 @@ interface AuthCtx {
     loading: boolean;
     login: (email: string, password: string) => Promise<void>;
     register: (name: string, email: string, password: string) => Promise<void>;
+    requestOtp: (email: string, name?: string) => Promise<void>;
+    verifyOtp: (email: string, otp: string, name?: string) => Promise<void>;
     logout: () => Promise<void>;
     refresh: () => Promise<void>;
 }
@@ -59,6 +61,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(u);
     };
 
+    const requestOtp = async (email: string, name?: string) => {
+        await authApi.requestOtp({ email, name });
+    };
+
+    const verifyOtp = async (email: string, otp: string, name?: string) => {
+        const { data } = await authApi.verifyOtp({ email, otp, name });
+        const { access_token, refresh_token, user: u } = data.data;
+        Cookies.set('access_token', access_token, { expires: 1 / 96 });
+        Cookies.set('refresh_token', refresh_token, { expires: 7 });
+        setUser(u);
+    };
+
     const logout = async () => {
         try { await authApi.logout(); } catch { }
         Cookies.remove('access_token');
@@ -67,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, register, logout, refresh }}>
+        <AuthContext.Provider value={{ user, loading, login, register, requestOtp, verifyOtp, logout, refresh }}>
             {children}
         </AuthContext.Provider>
     );

@@ -192,13 +192,13 @@ export default function UploadPage() {
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">Category</label>
                             <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="input">
-                                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                {CATEGORIES.map(c => <option key={c} value={c} className="bg-surface-800 text-white">{c}</option>)}
                             </select>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">License</label>
                             <select value={form.license} onChange={e => setForm(f => ({ ...f, license: e.target.value }))} className="input">
-                                {LICENSES.map(l => <option key={l} value={l}>{l}</option>)}
+                                {LICENSES.map(l => <option key={l} value={l} className="bg-surface-800 text-white">{l}</option>)}
                             </select>
                         </div>
                     </div>

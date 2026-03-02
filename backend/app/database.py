@@ -72,6 +72,10 @@ def processed_webhooks_col() -> Collection:
 def audit_logs_col() -> Collection:
     return db["audit_logs"]
 
+def otps_col() -> Collection:
+    return db["otps"]
+
+
 
 # ─── Index creation (idempotent) ─────────────────────────────
 def _create_indexes():
@@ -108,5 +112,9 @@ def _create_indexes():
 
     # processed_webhooks (idempotency)
     processed_webhooks_col().create_index("razorpay_event_id", unique=True)
+    
+    # otps
+    otps_col().create_index("email")
+    otps_col().create_index("created_at", expireAfterSeconds=300)
 
     log.info("indexes_created")

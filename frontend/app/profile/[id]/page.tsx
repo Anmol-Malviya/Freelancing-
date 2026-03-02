@@ -90,7 +90,7 @@ export default function ProfilePage() {
                                 </button>
                             )}
                             {isOwn && (
-                                <a href="/dashboard" className="btn-secondary">Edit Profile</a>
+                                <a href="/profile/edit" className="btn-secondary">Edit Profile</a>
                             )}
                         </div>
 

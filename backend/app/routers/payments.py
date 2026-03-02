@@ -38,9 +38,6 @@ def get_s3_client():
 # ─── Create Order ─────────────────────────────────────────────
 @router.post("/create-order")
 async def create_order(body: CreateOrderRequest, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("email_verified"):
-        raise HTTPException(status_code=403, detail="Email verification required to purchase")
-
     try:
         project_oid = ObjectId(body.project_id)
     except Exception:
