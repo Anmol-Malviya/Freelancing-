@@ -47,16 +47,21 @@ async def lifespan(app: FastAPI):
     from firebase_admin import credentials
     import os
     
-    cred_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "firebase-service-account.json")
+    # Check local path first, then Render's cloud secret path
+    local_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "firebase-service-account.json")
+    render_path = "/etc/secrets/firebase-service-account.json"
+    
+    cred_path = local_path if os.path.exists(local_path) else render_path
+
     if os.path.exists(cred_path):
         try:
             cred = credentials.Certificate(cred_path)
             firebase_admin.initialize_app(cred)
-            log.info("firebase_admin_configured")
+            log.info("firebase_admin_configured", path=cred_path)
         except Exception as e:
             log.error(f"firebase_admin_failed: {e}")
     else:
-        log.warning("firebase_admin_missing", message="firebase-service-account.json not found in backend folder. Firebase auth login will fail.")
+        log.warning("firebase_admin_missing", message="firebase-service-account.json not found locally or in /etc/secrets/. Firebase auth login will fail.")
 
     yield
     disconnect_db()
