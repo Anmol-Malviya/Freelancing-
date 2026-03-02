@@ -5,6 +5,9 @@ import {
     Zap, Users, Sparkles, CheckCircle2, CloudUpload
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { SparklesCore } from '@/components/ui/sparkles';
+import { HeroSection } from '@/components/ui/hero-odyssey';
+import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 
 const FEATURES = [
     { icon: ShoppingBag, title: 'Sell Source Code', desc: 'Upload your projects as ZIP files and start earning instantly with zero hidden fees.' },
@@ -31,57 +34,19 @@ const STATS = [
 export default function HomePage() {
     const { user } = useAuth() as any;
 
+    // Parallax scroll hooks
+    const { scrollYProgress } = useScroll();
+    const smoothScrollYProgress = useSpring(scrollYProgress, { stiffness: 100, damping: 30, restDelta: 0.001 });
+    const statsY = useTransform(smoothScrollYProgress, [0, 0.5], [0, -100]);
+    const stepsY = useTransform(smoothScrollYProgress, [0, 0.8], [50, -50]);
+
     return (
         <div className="relative min-h-screen bg-surface-900 text-white selection:bg-brand-500/30 font-sans">
-            {/* Background elements */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-brand-600/20 blur-[120px]" />
-                <div className="absolute top-[20%] right-[-10%] w-[30%] h-[40%] rounded-full bg-purple-600/20 blur-[120px]" />
-                <div className="absolute bottom-[-10%] left-[20%] w-[40%] h-[40%] rounded-full bg-blue-600/10 blur-[120px]" />
-            </div>
+            <HeroSection />
 
-            {/* Hero Section */}
-            <section className="relative pt-32 pb-20 lg:pt-40 lg:pb-28 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex flex-col items-center text-center">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-500/10 border border-brand-500/30 text-brand-400 text-sm font-medium mb-8 animate-fade-in shadow-[0_0_15px_rgba(97,114,243,0.2)] backdrop-blur-md">
-                    <Sparkles size={16} className="animate-pulse" />
-                    <span className="tracking-wide">The Next-Gen Developer Marketplace</span>
-                </div>
-
-                <h1 className="text-5xl sm:text-6xl lg:text-8xl font-black tracking-tight text-white leading-[1.1] animate-slide-up">
-                    Monetize Your <br className="hidden sm:block" />
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 via-purple-400 to-brand-300">
-                        Code & Creativity.
-                    </span>
-                </h1>
-
-                <p className="mt-8 text-lg sm:text-2xl text-gray-400 max-w-3xl mx-auto animate-slide-up leading-relaxed">
-                    DevMarket is the premium marketplace where top-tier developers sell source code, showcase projects, and build a massive following.
-                </p>
-
-                <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-5 w-full sm:w-auto animate-slide-up">
-                    {user ? (
-                        <>
-                            <Link href="/marketplace" className="btn-primary px-8 py-4 text-lg w-full sm:w-auto group">
-                                Explore Projects <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
-                            </Link>
-                            <Link href="/upload" className="btn-secondary px-8 py-4 text-lg w-full sm:w-auto flex items-center justify-center gap-2">
-                                <CloudUpload size={20} /> Upload & Earn
-                            </Link>
-                        </>
-                    ) : (
-                        <>
-                            <Link href="/auth/register" className="btn-primary px-8 py-4 text-lg w-full sm:w-auto group shadow-[0_0_30px_rgba(97,114,243,0.3)] hover:shadow-[0_0_40px_rgba(97,114,243,0.5)]">
-                                Start Selling for Free <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
-                            </Link>
-                            <Link href="/marketplace" className="btn-secondary px-8 py-4 text-lg w-full sm:w-auto flex items-center justify-center gap-2 group">
-                                Browse Projects
-                            </Link>
-                        </>
-                    )}
-                </div>
-
-                {/* Hero Stats */}
-                <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 max-w-4xl mx-auto w-full border-t border-white/5 pt-12 animate-slide-up">
+            {/* Hero Stats */}
+            <motion.section style={{ y: statsY }} className="relative bg-surface-900 border-t border-white/5 py-12 z-10 w-full overflow-hidden">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 max-w-4xl mx-auto w-full px-4 items-center">
                     {STATS.map(({ value, label }) => (
                         <div key={label} className="flex flex-col items-center justify-center p-4">
                             <div className="text-3xl sm:text-4xl font-black text-white mb-2 tracking-tight">{value}</div>
@@ -89,10 +54,10 @@ export default function HomePage() {
                         </div>
                     ))}
                 </div>
-            </section>
+            </motion.section>
 
             {/* How it Works */}
-            <section className="py-24 bg-surface-800/40 border-y border-white/5 relative">
+            <motion.section style={{ y: stepsY }} className="py-24 bg-surface-800/40 border-y border-white/5 relative z-20">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center mb-16">
                         <h2 className="text-3xl md:text-5xl font-bold text-white mb-6">How DevMarket Works</h2>
@@ -114,7 +79,7 @@ export default function HomePage() {
                         ))}
                     </div>
                 </div>
-            </section>
+            </motion.section>
 
             {/* Features Grid */}
             <section className="py-32 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

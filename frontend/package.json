@@ -18,7 +18,13 @@
         "react-hot-toast": "^2.4.1",
         "lucide-react": "^0.378.0",
         "razorpay": "^2.9.2",
-        "firebase": "^10.12.0"
+        "firebase": "^10.12.0",
+        "framer-motion": "^11.0.0",
+        "@tsparticles/engine": "^3.0.0",
+        "@tsparticles/react": "^3.0.0",
+        "@tsparticles/slim": "^3.0.0",
+        "clsx": "^2.1.0",
+        "tailwind-merge": "^2.2.1"
     },
     "devDependencies": {
         "typescript": "^5",
