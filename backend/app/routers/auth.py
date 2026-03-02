@@ -162,7 +162,10 @@ def send_otp_email(email: str, otp: str):
 @router.post("/request-otp")
 async def request_otp(body: SendOTPRequest):
     try:
-        otp = str(random.randint(100000, 999999))
+        # HARDCODED OTP FOR DEMO / RENDER DEPLOYMENT
+        # Since Render freezes outgoing emails on their free tier, we'll
+        # just use a single code that always works: 123456
+        otp = "123456"
         now = datetime.utcnow()
         
         # Store OTP in db
@@ -175,11 +178,9 @@ async def request_otp(body: SendOTPRequest):
         # Log the OTP on the server for easy testing on Render
         print(f"\n🔑 GENERATED OTP for {body.email}: {otp}\n")
         
-        # Send email asynchronously so it doesn't block the backend thread
-        import asyncio
-        asyncio.create_task(asyncio.to_thread(send_otp_email, body.email.lower(), otp))
+        # We skip calling send_otp_email entirely so Render doesn't throw a blocked port error
         
-        return {"success": True, "data": {"message": "OTP logic executed"}}
+        return {"success": True, "data": {"message": "OTP logic executed (123456)"}}
     except HTTPException:
         raise
     except Exception as e:
