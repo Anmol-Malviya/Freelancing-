@@ -111,41 +111,67 @@ async def login(body: UserLogin):
     }
 
 def send_otp_email(email: str, otp: str):
-    import urllib.request
-    import json
     import os
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
     from fastapi import HTTPException
+
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
     
-    # Render doesn't block out-bound HTTP requests, so Resend API will work!
-    api_key = settings.RESEND_API_KEY
-    if not api_key:
-        print("Missing RESEND_API_KEY")
-        return
-        
+    # We will try SSL on 465 first, and if that fails, STARTTLS on 587.
+    smtp_server = "smtp.gmail.com"
+    sender_email = settings.EMAIL_FROM
+    sender_password = settings.RESEND_API_KEY # Repurposed as SMTP password
+    
+    # Force read from .env if current settings are empty or default
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                if line.startswith("RESEND_API_KEY="): # Repurposing this env var for SMTP App Password
+                    sender_password = line.strip().split("=", 1)[1]
+                elif line.startswith("EMAIL_FROM="):
+                    sender_email = line.strip().split("=", 1)[1]
+
+    message = MIMEMultipart("alternative")
+    message["Subject"] = "Your DevMarket Verification Code"
+    message["From"] = sender_email
+    message["To"] = email
+
+    html = f"<h1>Verification Code</h1><p>Your OTP is <strong style='font-size: 24px; letter-spacing: 4px;'>{otp}</strong>. It will expire in 5 minutes.</p>"
+    part2 = MIMEText(html, "html")
+    message.attach(part2)
+
     try:
-        data = {
-            "from": "DevMarket <onboarding@resend.dev>",
-            "to": [email],
-            "subject": "Your DevMarket Verification Code",
-            "html": f"<h1>Verification Code</h1><p>Your OTP is <strong style='font-size: 24px; letter-spacing: 4px;'>{otp}</strong>. It will expire in 5 minutes.</p>"
-        }
-        
-        req = urllib.request.Request("https://api.resend.com/emails", data=json.dumps(data).encode("utf-8"))
-        req.add_header("Authorization", f"Bearer {api_key}")
-        req.add_header("Content-Type", "application/json")
-        
-        response = urllib.request.urlopen(req)
-        print(f"✅ EMAIL SENT SUCCESSFULLY VIA RESEND API: {response.read()}")
-        
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode()
-        print(f"\n{'='*60}")
-        print(f"🚨 RESEND API ERROR: You are trying to send to {email}")
-        print(f"Resend Error details: {error_body}")
-        print("💡 REMINDER: On Resend's free tier, you can ONLY send emails to the exact email address you registered Resend with (jsshmrgs@gmail.com). To send to other emails, you must verify a domain.")
-        print(f"{'='*60}\n")
+        # Attempt 1: SSL on port 465
+        context = smtplib.SMTP_SSL(smtp_server, 465, timeout=10)
+        context.login(sender_email, sender_password)
+        context.sendmail(sender_email, email, message.as_string())
+        context.quit()
+        print(f"✅ SMTP EMAIL SENT SUCCESSFULLY (SSL) to {email}")
+        return {"id": "smtp-sent"}
     except Exception as e:
-        print(f"Exception sending email: {e}")
+        print(f"SSL Port 465 failed: {e}. Trying STARTTLS on 587...")
+        try:
+            # Attempt 2: STARTTLS on port 587
+            context2 = smtplib.SMTP(smtp_server, 587, timeout=10)
+            context2.starttls()
+            context2.login(sender_email, sender_password)
+            context2.sendmail(sender_email, email, message.as_string())
+            context2.quit()
+            print(f"✅ SMTP EMAIL SENT SUCCESSFULLY (STARTTLS) to {email}")
+            return {"id": "smtp-sent"}
+        except smtplib.SMTPAuthenticationError as auth_err:
+            print(f"🚨 SMTP Auth Blocked. Invalid App Password for {sender_email}: {auth_err}")
+            return
+        except Exception as e2:
+            print(f"\n{'='*60}")
+            print(f"🚨 GOOGLE SMTP SEND FAILED (Render likely blocking ports)")
+            print(f"Error 1 (465): {e}")
+            print(f"Error 2 (587): {e2}")
+            print(f"📧 Fallback log: Your OTP for {email} is -> {otp} <-")
+            print(f"{'='*60}\n")
+            return
 
 
 
