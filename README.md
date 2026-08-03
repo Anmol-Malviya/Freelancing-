@@ -182,3 +182,10 @@ Transparency is key. We deduct simple platform and payment processing fees direc
 <div align="center">
   <i>Built with ❤️ for Developers</i>
 </div>
+
+
+---
+
+## Maintainer
+
+Maintained by [Anmol Malviya](https://github.com/Anmol-Malviya). Issues and focused pull requests are welcome.
